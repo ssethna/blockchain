@@ -1,0 +1,23 @@
+[
+  {
+    "index": 0,
+    "timestamp": 0,
+    "previous_hash": "0",
+    "hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "data": "Genesis Block"
+  },
+  {
+    "index": 1,
+    "timestamp": 1739247377,
+    "previous_hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "hash": "446ce097d374a88ad07c04cc442f64587e8ba2f7c71e927c5829b5489ba8fcb3",
+    "data": "First block after genesis"
+  },
+  {
+    "index": 2,
+    "timestamp": 1739247378,
+    "previous_hash": "446ce097d374a88ad07c04cc442f64587e8ba2f7c71e927c5829b5489ba8fcb3",
+    "hash": "4190a5398acd007319a98852c8d8a13fdee49ff8ead7dad2a940749120ecc3fb",
+    "data": "Second block after genesis"
+  }
+]

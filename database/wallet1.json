@@ -1,0 +1,7 @@
+{
+    "address": "address1",
+    "private_key": "private_key1",
+    "public_key": "public_key1",
+    "balance": 50.0,
+    "transaction_history": []
+}

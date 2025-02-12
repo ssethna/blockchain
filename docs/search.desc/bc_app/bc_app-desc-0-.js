@@ -1,0 +1,1 @@
+searchState.loadedDescShard("bc_app", 0, "Main runner for the Blockchain Application. Function main. …\nList blockchain data.\nFunction main for the blockchain application.\nReset application data to start over.\nCrypto transaction from one wallet to another.\nView wallet data.")

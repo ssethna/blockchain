@@ -1,0 +1,16 @@
+[
+  {
+    "tx_id": "abc123",
+    "sender": "address1",
+    "receiver": "address2",
+    "amount": 10.0,
+    "timestamp": 1739247377
+  },
+  {
+    "tx_id": "def456",
+    "sender": "address2",
+    "receiver": "address3",
+    "amount": 5.0,
+    "timestamp": 1739247380
+  }
+]
