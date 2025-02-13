@@ -1,5 +1,7 @@
 # blockchain
 Sample Blockchain Application. Displays basic blockchain concepts with transactions using crypto wallets.
+The blockchain, blocks, wallets are persisted in MongoDB.
+
 A command line application that provides the following options:
 
 Please input your choice:

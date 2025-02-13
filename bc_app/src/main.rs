@@ -4,28 +4,41 @@
 //! List, transact and reset the blockchain sample application.
 //!
 
+mod mongo_utils;
+
+use block_chain::block::Block;
 use block_chain::blockchain::Blockchain;
 use block_chain::wallet::{Transaction, Wallet};
+use bson::Document;
 use chrono::Utc;
+use mongodb::{Client, Collection};
+use std::error::Error;
 use std::io::{self, Write};
-use std::path::Path;
-use std::{fs, i16};
+use tokio;
 use uuid::Uuid;
 
 ///
 /// Function main for the blockchain application.
 ///
-fn main() {
-    // Load blockchain from file
-    let mut blockchain = Blockchain::new();
-    if Path::new("./database/blockchain.json").exists() {
-        blockchain = Blockchain::load_from_file("./database/blockchain.json");
-        //blockchain.load_blocks_from_file("./database/blocks.json");
-    }
+#[tokio::main]
+async fn main() -> Result<(), Box<dyn Error>> {
+    // Initialize MongoDB client
+    let client = Client::with_uri_str("mongodb://localhost:27017").await?;
+    let db = client.database("blockchain_db");
 
-    // Load wallets from files
-    let mut wallet1 = Wallet::load_from_file("./database/wallet1.json");
-    let mut wallet2 = Wallet::load_from_file("./database/wallet2.json");
+    // Initialize collections
+    let blocks_collection = db.collection("blocks");
+    let wallets_collection = db.collection("wallets");
+    let blockchain_collection = db.collection("blockchain");
+
+    // Load blockchain from database
+    let mut blockchain =
+        mongo_utils::load_blockchain(blocks_collection.clone(), blockchain_collection.clone())
+            .await?;
+
+    // Load wallets from database
+    let mut wallet1 = mongo_utils::load_wallet(wallets_collection.clone(), "address1").await?;
+    let mut wallet2 = mongo_utils::load_wallet(wallets_collection.clone(), "address2").await?;
 
     loop {
         // Display the menu options
@@ -55,18 +68,58 @@ fn main() {
                 1 => list_blockchain(&blockchain),
                 2 => view_wallet(&wallet1, "Wallet1"),
                 3 => view_wallet(&wallet2, "Wallet2"),
-                4 => send_crypto(&mut blockchain, &mut wallet1, &mut wallet2, 1),
-                5 => send_crypto(&mut blockchain, &mut wallet2, &mut wallet1, 2),
-                6 => reset_sample_data(&mut blockchain, &mut wallet1, &mut wallet2),
+                4 => {
+                    send_crypto(
+                        &mut blockchain,
+                        &mut wallet1,
+                        &mut wallet2,
+                        1,
+                        blocks_collection.clone(),
+                        wallets_collection.clone(),
+                        blockchain_collection.clone(),
+                    )
+                    .await?
+                }
+                5 => {
+                    send_crypto(
+                        &mut blockchain,
+                        &mut wallet2,
+                        &mut wallet1,
+                        2,
+                        blocks_collection.clone(),
+                        wallets_collection.clone(),
+                        blockchain_collection.clone(),
+                    )
+                    .await?
+                }
+                6 => {
+                    mongo_utils::reset_sample_data(
+                        blockchain_collection.clone(),
+                        blocks_collection.clone(),
+                        wallets_collection.clone(),
+                    )
+                    .await?;
+                    blockchain = mongo_utils::load_blockchain(
+                        blocks_collection.clone(),
+                        blockchain_collection.clone(),
+                    )
+                    .await?;
+                    wallet1 =
+                        mongo_utils::load_wallet(wallets_collection.clone(), "address1").await?;
+                    wallet2 =
+                        mongo_utils::load_wallet(wallets_collection.clone(), "address2").await?
+                }
                 7 => {
                     println!("Exiting...");
                     break;
                 }
-                _ => println!("Invalid choice. Please enter a number between 1 and 6."),
+                _ => println!("Invalid choice. Please enter a number between 1 and 7."),
             },
             Err(_) => println!("Invalid input. Please enter a number."),
         }
     }
+
+    Ok(())
 }
 
 ///
@@ -76,7 +129,7 @@ fn list_blockchain(blockchain: &Blockchain) {
     println!("\n\nListing Blockchain...");
 
     for block in &blockchain.chain {
-        //println!("{:?}\nblock data: {}\n", block, block.data);
+        // Pretty print the data field if it is valid JSON
         let pretty_block =
             serde_json::to_string_pretty(block).expect("Failed to pretty print block");
         println!("{}\n", pretty_block);
@@ -90,14 +143,23 @@ fn list_blockchain(blockchain: &Blockchain) {
 ///
 fn view_wallet(wallet: &Wallet, wallet_name: &str) {
     println!("\n\nViewing {}...", wallet_name);
-    let pretty_wallet = serde_json::to_string_pretty(wallet).expect("Failed to pretty print block");
+    let pretty_wallet =
+        serde_json::to_string_pretty(wallet).expect("Failed to pretty print wallet");
     println!("{}\n", pretty_wallet);
 }
 
 ///
 /// Crypto transaction from one wallet to another.
 ///
-fn send_crypto(blockchain: &mut Blockchain, wallet1: &mut Wallet, wallet2: &mut Wallet, i: i16) {
+async fn send_crypto(
+    blockchain: &mut Blockchain,
+    wallet1: &mut Wallet,
+    wallet2: &mut Wallet,
+    i: i16,
+    blocks_collection: Collection<Document>,
+    wallets_collection: Collection<Document>,
+    blockchain_collection: Collection<Document>,
+) -> Result<(), Box<dyn Error>> {
     if i == 1 {
         println!("\n\nSending Crypto from Wallet1 to Wallet2...");
     } else {
@@ -119,7 +181,7 @@ fn send_crypto(blockchain: &mut Blockchain, wallet1: &mut Wallet, wallet2: &mut 
 
     if wallet1.get_balance() < amount {
         println!("Transaction failed: Insufficient balance\n");
-        return;
+        return Ok(());
     }
 
     // Process transaction
@@ -137,82 +199,29 @@ fn send_crypto(blockchain: &mut Blockchain, wallet1: &mut Wallet, wallet2: &mut 
     wallet1.add_transaction(transaction.clone());
     wallet2.add_transaction(transaction.clone());
 
-    blockchain
-        .add_block(serde_json::to_string(&transaction).expect("Failed to serialize transaction"));
+    // Store the transaction directly as a JSON object
+    let transaction_data =
+        serde_json::to_value(&transaction).expect("Failed to serialize transaction");
 
-    // Save updated blockchain and wallets to files
-    fs::write(
-        "./database/blocks.json",
-        serde_json::to_string(&blockchain.chain).expect("Failed to serialize blocks"),
-    )
-    .expect("Unable to write blocks file");
+    // Update Block struct to accept transaction_data as Value
+    let block = Block::new(
+        blockchain.chain.len() as u64,
+        Utc::now().timestamp() as u64,
+        blockchain
+            .chain
+            .last()
+            .map_or(String::from("0"), |block| block.hash.clone()),
+        transaction_data,
+    );
 
-    fs::write(
-        "./database/blockchain.json",
-        serde_json::to_string(&blockchain).expect("Failed to serialize blockchain"),
-    )
-    .expect("Unable to write blockchain file");
+    blockchain.chain.push(block);
 
-    if i == 1 {
-        fs::write(
-            "./database/wallet1.json",
-            serde_json::to_string(&wallet1).expect("Failed to serialize wallet"),
-        )
-        .expect("Unable to write wallet1 file");
+    // Save updated blockchain and wallets to MongoDB
+    mongo_utils::save_blockchain(blockchain, blocks_collection, blockchain_collection).await?;
+    mongo_utils::save_wallet(wallet1.clone(), wallets_collection.clone()).await?;
+    mongo_utils::save_wallet(wallet2.clone(), wallets_collection).await?;
 
-        fs::write(
-            "./database/wallet2.json",
-            serde_json::to_string(&wallet2).expect("Failed to serialize wallet"),
-        )
-        .expect("Unable to write wallet2 file");
-    } else {
-        fs::write(
-            "./database/wallet1.json",
-            serde_json::to_string(&wallet2).expect("Failed to serialize wallet"),
-        )
-        .expect("Unable to write wallet1 file");
-
-        fs::write(
-            "./database/wallet2.json",
-            serde_json::to_string(&wallet1).expect("Failed to serialize wallet"),
-        )
-        .expect("Unable to write wallet2 file");
-    }
     println!("Transaction successful, blockchain and wallets updated\n");
-}
 
-///
-/// Reset application data to start over.
-///
-fn reset_sample_data(blockchain: &mut Blockchain, wallet1: &mut Wallet, wallet2: &mut Wallet) {
-    println!("Resetting Sample Data...");
-
-    let source_files = [
-        ("./database/bkup_blocks.json", "./database/blocks.json"),
-        (
-            "./database/bkup_blockchain.json",
-            "./database/blockchain.json",
-        ),
-        (
-            "./database/bkup_transactions.json",
-            "./database/transactions.json",
-        ),
-        ("./database/bkup_wallet1.json", "./database/wallet1.json"),
-        ("./database/bkup_wallet2.json", "./database/wallet2.json"),
-    ];
-
-    for (source, destination) in source_files.iter() {
-        match fs::copy(source, destination) {
-            Ok(_) => println!("Successfully copied {} to {}", source, destination),
-            Err(e) => println!("Failed to copy {} to {}: {}", source, destination, e),
-        }
-    }
-
-    *blockchain = Blockchain::new();
-    println!("Blockchain has been reset to its initial state.\n");
-
-    // Reload wallets from reset files
-    *wallet1 = Wallet::load_from_file("./database/wallet1.json");
-    *wallet2 = Wallet::load_from_file("./database/wallet2.json");
-    println!("Wallets have been reset to their initial state.\n");
+    Ok(())
 }

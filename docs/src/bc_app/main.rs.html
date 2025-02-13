@@ -216,34 +216,56 @@
 <a href="#215" id="215">215</a>
 <a href="#216" id="216">216</a>
 <a href="#217" id="217">217</a>
-<a href="#218" id="218">218</a></pre></div><pre class="rust"><code><span class="doccomment">//!
+<a href="#218" id="218">218</a>
+<a href="#219" id="219">219</a>
+<a href="#220" id="220">220</a>
+<a href="#221" id="221">221</a>
+<a href="#222" id="222">222</a>
+<a href="#223" id="223">223</a>
+<a href="#224" id="224">224</a>
+<a href="#225" id="225">225</a>
+<a href="#226" id="226">226</a>
+<a href="#227" id="227">227</a></pre></div><pre class="rust"><code><span class="doccomment">//!
 //! Main runner for the Blockchain Application.&lt;br&gt;
 //! Function main.&lt;br&gt;
 //! List, transact and reset the blockchain sample application.
 //!
 
-</span><span class="kw">use </span>block_chain::blockchain::Blockchain;
+</span><span class="kw">mod </span>mongo_utils;
+
+<span class="kw">use </span>block_chain::block::Block;
+<span class="kw">use </span>block_chain::blockchain::Blockchain;
 <span class="kw">use </span>block_chain::wallet::{Transaction, Wallet};
+<span class="kw">use </span>bson::Document;
 <span class="kw">use </span>chrono::Utc;
+<span class="kw">use </span>mongodb::{Client, Collection};
+<span class="kw">use </span>std::error::Error;
 <span class="kw">use </span>std::io::{<span class="self">self</span>, Write};
-<span class="kw">use </span>std::path::Path;
-<span class="kw">use </span>std::{fs, i16};
+<span class="kw">use </span>tokio;
 <span class="kw">use </span>uuid::Uuid;
 
 <span class="doccomment">///
 /// Function main for the blockchain application.
 ///
-</span><span class="kw">fn </span>main() {
-    <span class="comment">// Load blockchain from file
-    </span><span class="kw">let </span><span class="kw-2">mut </span>blockchain = Blockchain::new();
-    <span class="kw">if </span>Path::new(<span class="string">"./database/blockchain.json"</span>).exists() {
-        blockchain = Blockchain::load_from_file(<span class="string">"./database/blockchain.json"</span>);
-        <span class="comment">//blockchain.load_blocks_from_file("./database/blocks.json");
-    </span>}
+</span><span class="attr">#[tokio::main]
+</span><span class="kw">async fn </span>main() -&gt; <span class="prelude-ty">Result</span>&lt;(), Box&lt;<span class="kw">dyn </span>Error&gt;&gt; {
+    <span class="comment">// Initialize MongoDB client
+    </span><span class="kw">let </span>client = Client::with_uri_str(<span class="string">"mongodb://localhost:27017"</span>).<span class="kw">await</span><span class="question-mark">?</span>;
+    <span class="kw">let </span>db = client.database(<span class="string">"blockchain_db"</span>);
 
-    <span class="comment">// Load wallets from files
-    </span><span class="kw">let </span><span class="kw-2">mut </span>wallet1 = Wallet::load_from_file(<span class="string">"./database/wallet1.json"</span>);
-    <span class="kw">let </span><span class="kw-2">mut </span>wallet2 = Wallet::load_from_file(<span class="string">"./database/wallet2.json"</span>);
+    <span class="comment">// Initialize collections
+    </span><span class="kw">let </span>blocks_collection = db.collection(<span class="string">"blocks"</span>);
+    <span class="kw">let </span>wallets_collection = db.collection(<span class="string">"wallets"</span>);
+    <span class="kw">let </span>blockchain_collection = db.collection(<span class="string">"blockchain"</span>);
+
+    <span class="comment">// Load blockchain from database
+    </span><span class="kw">let </span><span class="kw-2">mut </span>blockchain =
+        mongo_utils::load_blockchain(blocks_collection.clone(), blockchain_collection.clone())
+            .<span class="kw">await</span><span class="question-mark">?</span>;
+
+    <span class="comment">// Load wallets from database
+    </span><span class="kw">let </span><span class="kw-2">mut </span>wallet1 = mongo_utils::load_wallet(wallets_collection.clone(), <span class="string">"address1"</span>).<span class="kw">await</span><span class="question-mark">?</span>;
+    <span class="kw">let </span><span class="kw-2">mut </span>wallet2 = mongo_utils::load_wallet(wallets_collection.clone(), <span class="string">"address2"</span>).<span class="kw">await</span><span class="question-mark">?</span>;
 
     <span class="kw">loop </span>{
         <span class="comment">// Display the menu options
@@ -273,18 +295,58 @@
                 <span class="number">1 </span>=&gt; list_blockchain(<span class="kw-2">&amp;</span>blockchain),
                 <span class="number">2 </span>=&gt; view_wallet(<span class="kw-2">&amp;</span>wallet1, <span class="string">"Wallet1"</span>),
                 <span class="number">3 </span>=&gt; view_wallet(<span class="kw-2">&amp;</span>wallet2, <span class="string">"Wallet2"</span>),
-                <span class="number">4 </span>=&gt; send_crypto(<span class="kw-2">&amp;mut </span>blockchain, <span class="kw-2">&amp;mut </span>wallet1, <span class="kw-2">&amp;mut </span>wallet2, <span class="number">1</span>),
-                <span class="number">5 </span>=&gt; send_crypto(<span class="kw-2">&amp;mut </span>blockchain, <span class="kw-2">&amp;mut </span>wallet2, <span class="kw-2">&amp;mut </span>wallet1, <span class="number">2</span>),
-                <span class="number">6 </span>=&gt; reset_sample_data(<span class="kw-2">&amp;mut </span>blockchain, <span class="kw-2">&amp;mut </span>wallet1, <span class="kw-2">&amp;mut </span>wallet2),
+                <span class="number">4 </span>=&gt; {
+                    send_crypto(
+                        <span class="kw-2">&amp;mut </span>blockchain,
+                        <span class="kw-2">&amp;mut </span>wallet1,
+                        <span class="kw-2">&amp;mut </span>wallet2,
+                        <span class="number">1</span>,
+                        blocks_collection.clone(),
+                        wallets_collection.clone(),
+                        blockchain_collection.clone(),
+                    )
+                    .<span class="kw">await</span><span class="question-mark">?
+                </span>}
+                <span class="number">5 </span>=&gt; {
+                    send_crypto(
+                        <span class="kw-2">&amp;mut </span>blockchain,
+                        <span class="kw-2">&amp;mut </span>wallet2,
+                        <span class="kw-2">&amp;mut </span>wallet1,
+                        <span class="number">2</span>,
+                        blocks_collection.clone(),
+                        wallets_collection.clone(),
+                        blockchain_collection.clone(),
+                    )
+                    .<span class="kw">await</span><span class="question-mark">?
+                </span>}
+                <span class="number">6 </span>=&gt; {
+                    mongo_utils::reset_sample_data(
+                        blockchain_collection.clone(),
+                        blocks_collection.clone(),
+                        wallets_collection.clone(),
+                    )
+                    .<span class="kw">await</span><span class="question-mark">?</span>;
+                    blockchain = mongo_utils::load_blockchain(
+                        blocks_collection.clone(),
+                        blockchain_collection.clone(),
+                    )
+                    .<span class="kw">await</span><span class="question-mark">?</span>;
+                    wallet1 =
+                        mongo_utils::load_wallet(wallets_collection.clone(), <span class="string">"address1"</span>).<span class="kw">await</span><span class="question-mark">?</span>;
+                    wallet2 =
+                        mongo_utils::load_wallet(wallets_collection.clone(), <span class="string">"address2"</span>).<span class="kw">await</span><span class="question-mark">?
+                </span>}
                 <span class="number">7 </span>=&gt; {
                     <span class="macro">println!</span>(<span class="string">"Exiting..."</span>);
                     <span class="kw">break</span>;
                 }
-                <span class="kw">_ </span>=&gt; <span class="macro">println!</span>(<span class="string">"Invalid choice. Please enter a number between 1 and 6."</span>),
+                <span class="kw">_ </span>=&gt; <span class="macro">println!</span>(<span class="string">"Invalid choice. Please enter a number between 1 and 7."</span>),
             },
             <span class="prelude-val">Err</span>(<span class="kw">_</span>) =&gt; <span class="macro">println!</span>(<span class="string">"Invalid input. Please enter a number."</span>),
         }
     }
+
+    <span class="prelude-val">Ok</span>(())
 }
 
 <span class="doccomment">///
@@ -294,7 +356,7 @@
     <span class="macro">println!</span>(<span class="string">"\n\nListing Blockchain..."</span>);
 
     <span class="kw">for </span>block <span class="kw">in </span><span class="kw-2">&amp;</span>blockchain.chain {
-        <span class="comment">//println!("{:?}\nblock data: {}\n", block, block.data);
+        <span class="comment">// Pretty print the data field if it is valid JSON
         </span><span class="kw">let </span>pretty_block =
             serde_json::to_string_pretty(block).expect(<span class="string">"Failed to pretty print block"</span>);
         <span class="macro">println!</span>(<span class="string">"{}\n"</span>, pretty_block);
@@ -308,14 +370,23 @@
 ///
 </span><span class="kw">fn </span>view_wallet(wallet: <span class="kw-2">&amp;</span>Wallet, wallet_name: <span class="kw-2">&amp;</span>str) {
     <span class="macro">println!</span>(<span class="string">"\n\nViewing {}..."</span>, wallet_name);
-    <span class="kw">let </span>pretty_wallet = serde_json::to_string_pretty(wallet).expect(<span class="string">"Failed to pretty print block"</span>);
+    <span class="kw">let </span>pretty_wallet =
+        serde_json::to_string_pretty(wallet).expect(<span class="string">"Failed to pretty print wallet"</span>);
     <span class="macro">println!</span>(<span class="string">"{}\n"</span>, pretty_wallet);
 }
 
 <span class="doccomment">///
 /// Crypto transaction from one wallet to another.
 ///
-</span><span class="kw">fn </span>send_crypto(blockchain: <span class="kw-2">&amp;mut </span>Blockchain, wallet1: <span class="kw-2">&amp;mut </span>Wallet, wallet2: <span class="kw-2">&amp;mut </span>Wallet, i: i16) {
+</span><span class="kw">async fn </span>send_crypto(
+    blockchain: <span class="kw-2">&amp;mut </span>Blockchain,
+    wallet1: <span class="kw-2">&amp;mut </span>Wallet,
+    wallet2: <span class="kw-2">&amp;mut </span>Wallet,
+    i: i16,
+    blocks_collection: Collection&lt;Document&gt;,
+    wallets_collection: Collection&lt;Document&gt;,
+    blockchain_collection: Collection&lt;Document&gt;,
+) -&gt; <span class="prelude-ty">Result</span>&lt;(), Box&lt;<span class="kw">dyn </span>Error&gt;&gt; {
     <span class="kw">if </span>i == <span class="number">1 </span>{
         <span class="macro">println!</span>(<span class="string">"\n\nSending Crypto from Wallet1 to Wallet2..."</span>);
     } <span class="kw">else </span>{
@@ -337,7 +408,7 @@
 
     <span class="kw">if </span>wallet1.get_balance() &lt; amount {
         <span class="macro">println!</span>(<span class="string">"Transaction failed: Insufficient balance\n"</span>);
-        <span class="kw">return</span>;
+        <span class="kw">return </span><span class="prelude-val">Ok</span>(());
     }
 
     <span class="comment">// Process transaction
@@ -355,83 +426,30 @@
     wallet1.add_transaction(transaction.clone());
     wallet2.add_transaction(transaction.clone());
 
-    blockchain
-        .add_block(serde_json::to_string(<span class="kw-2">&amp;</span>transaction).expect(<span class="string">"Failed to serialize transaction"</span>));
+    <span class="comment">// Store the transaction directly as a JSON object
+    </span><span class="kw">let </span>transaction_data =
+        serde_json::to_value(<span class="kw-2">&amp;</span>transaction).expect(<span class="string">"Failed to serialize transaction"</span>);
 
-    <span class="comment">// Save updated blockchain and wallets to files
-    </span>fs::write(
-        <span class="string">"./database/blocks.json"</span>,
-        serde_json::to_string(<span class="kw-2">&amp;</span>blockchain.chain).expect(<span class="string">"Failed to serialize blocks"</span>),
-    )
-    .expect(<span class="string">"Unable to write blocks file"</span>);
+    <span class="comment">// Update Block struct to accept transaction_data as Value
+    </span><span class="kw">let </span>block = Block::new(
+        blockchain.chain.len() <span class="kw">as </span>u64,
+        Utc::now().timestamp() <span class="kw">as </span>u64,
+        blockchain
+            .chain
+            .last()
+            .map_or(String::from(<span class="string">"0"</span>), |block| block.hash.clone()),
+        transaction_data,
+    );
 
-    fs::write(
-        <span class="string">"./database/blockchain.json"</span>,
-        serde_json::to_string(<span class="kw-2">&amp;</span>blockchain).expect(<span class="string">"Failed to serialize blockchain"</span>),
-    )
-    .expect(<span class="string">"Unable to write blockchain file"</span>);
+    blockchain.chain.push(block);
 
-    <span class="kw">if </span>i == <span class="number">1 </span>{
-        fs::write(
-            <span class="string">"./database/wallet1.json"</span>,
-            serde_json::to_string(<span class="kw-2">&amp;</span>wallet1).expect(<span class="string">"Failed to serialize wallet"</span>),
-        )
-        .expect(<span class="string">"Unable to write wallet1 file"</span>);
+    <span class="comment">// Save updated blockchain and wallets to MongoDB
+    </span>mongo_utils::save_blockchain(blockchain, blocks_collection, blockchain_collection).<span class="kw">await</span><span class="question-mark">?</span>;
+    mongo_utils::save_wallet(wallet1.clone(), wallets_collection.clone()).<span class="kw">await</span><span class="question-mark">?</span>;
+    mongo_utils::save_wallet(wallet2.clone(), wallets_collection).<span class="kw">await</span><span class="question-mark">?</span>;
 
-        fs::write(
-            <span class="string">"./database/wallet2.json"</span>,
-            serde_json::to_string(<span class="kw-2">&amp;</span>wallet2).expect(<span class="string">"Failed to serialize wallet"</span>),
-        )
-        .expect(<span class="string">"Unable to write wallet2 file"</span>);
-    } <span class="kw">else </span>{
-        fs::write(
-            <span class="string">"./database/wallet1.json"</span>,
-            serde_json::to_string(<span class="kw-2">&amp;</span>wallet2).expect(<span class="string">"Failed to serialize wallet"</span>),
-        )
-        .expect(<span class="string">"Unable to write wallet1 file"</span>);
-
-        fs::write(
-            <span class="string">"./database/wallet2.json"</span>,
-            serde_json::to_string(<span class="kw-2">&amp;</span>wallet1).expect(<span class="string">"Failed to serialize wallet"</span>),
-        )
-        .expect(<span class="string">"Unable to write wallet2 file"</span>);
-    }
     <span class="macro">println!</span>(<span class="string">"Transaction successful, blockchain and wallets updated\n"</span>);
-}
 
-<span class="doccomment">///
-/// Reset application data to start over.
-///
-</span><span class="kw">fn </span>reset_sample_data(blockchain: <span class="kw-2">&amp;mut </span>Blockchain, wallet1: <span class="kw-2">&amp;mut </span>Wallet, wallet2: <span class="kw-2">&amp;mut </span>Wallet) {
-    <span class="macro">println!</span>(<span class="string">"Resetting Sample Data..."</span>);
-
-    <span class="kw">let </span>source_files = [
-        (<span class="string">"./database/bkup_blocks.json"</span>, <span class="string">"./database/blocks.json"</span>),
-        (
-            <span class="string">"./database/bkup_blockchain.json"</span>,
-            <span class="string">"./database/blockchain.json"</span>,
-        ),
-        (
-            <span class="string">"./database/bkup_transactions.json"</span>,
-            <span class="string">"./database/transactions.json"</span>,
-        ),
-        (<span class="string">"./database/bkup_wallet1.json"</span>, <span class="string">"./database/wallet1.json"</span>),
-        (<span class="string">"./database/bkup_wallet2.json"</span>, <span class="string">"./database/wallet2.json"</span>),
-    ];
-
-    <span class="kw">for </span>(source, destination) <span class="kw">in </span>source_files.iter() {
-        <span class="kw">match </span>fs::copy(source, destination) {
-            <span class="prelude-val">Ok</span>(<span class="kw">_</span>) =&gt; <span class="macro">println!</span>(<span class="string">"Successfully copied {} to {}"</span>, source, destination),
-            <span class="prelude-val">Err</span>(e) =&gt; <span class="macro">println!</span>(<span class="string">"Failed to copy {} to {}: {}"</span>, source, destination, e),
-        }
-    }
-
-    <span class="kw-2">*</span>blockchain = Blockchain::new();
-    <span class="macro">println!</span>(<span class="string">"Blockchain has been reset to its initial state.\n"</span>);
-
-    <span class="comment">// Reload wallets from reset files
-    </span><span class="kw-2">*</span>wallet1 = Wallet::load_from_file(<span class="string">"./database/wallet1.json"</span>);
-    <span class="kw-2">*</span>wallet2 = Wallet::load_from_file(<span class="string">"./database/wallet2.json"</span>);
-    <span class="macro">println!</span>(<span class="string">"Wallets have been reset to their initial state.\n"</span>);
+    <span class="prelude-val">Ok</span>(())
 }
 </code></pre></div></section></main></body></html>

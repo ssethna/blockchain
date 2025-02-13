@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["load_blockchain","load_wallet","reset_sample_data","save_blockchain","save_wallet"]};

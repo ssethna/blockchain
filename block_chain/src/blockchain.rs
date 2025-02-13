@@ -7,6 +7,7 @@ use crate::block::Block;
 use crate::wallet::{Transaction, Wallet};
 use chrono::Utc;
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 use uuid::Uuid;
 
 ///
@@ -26,23 +27,16 @@ impl Blockchain {
     /// Creates a new Blockchain
     ///
     pub fn new() -> Blockchain {
-        Blockchain {
-            chain: vec![Block::new(
-                0,
-                0,
-                String::from("0"),
-                String::from("Genesis Block"),
-            )],
-        }
+        Blockchain { chain: Vec::new() }
     }
 
     ///
     /// Function to add a block to the chain.
     ///
-    pub fn add_block(&mut self, data: String) {
+    pub fn add_block(&mut self, data: Value) {
         let previous_block = self.chain.last().unwrap();
         let new_block = Block::new(
-            previous_block.index + 1,
+            previous_block.block_index + 1,
             chrono::Utc::now().timestamp() as u64,
             previous_block.hash.clone(),
             data,
@@ -68,20 +62,6 @@ impl Blockchain {
         }
         true
     }
-
-    ///
-    /// Initial load of blockchain from database.
-    ///
-    pub fn load_from_file(filename: &str) -> Blockchain {
-        let data = std::fs::read_to_string(filename).expect("Unable to read file");
-        serde_json::from_str(&data).expect("Unable to parse JSON")
-    }
-
-    // pub fn load_blocks_from_file(&mut self, filename: &str) {
-    //     let data = std::fs::read_to_string(filename).expect("Unable to read file");
-    //     let blocks: Vec<Block> = serde_json::from_str(&data).expect("Unable to parse JSON");
-    //     self.chain = blocks;
-    // }
 
     ///
     /// Process a new transaction onto the blockchain.
@@ -111,39 +91,10 @@ impl Blockchain {
         sender_wallet.add_transaction(transaction.clone());
         receiver_wallet.add_transaction(transaction.clone());
 
-        self.add_block(
-            serde_json::to_string(&transaction).expect("Failed to serialize transaction"),
-        );
-    }
+        // Convert the transaction to a Value type
+        let transaction_data =
+            serde_json::to_value(&transaction).expect("Failed to serialize transaction");
 
-    ///
-    /// Optional processing of transactions from a file.<br>
-    /// Currently not used.
-    ///
-    pub fn load_transactions_from_file(&mut self, filename: &str, wallets: &mut [Wallet]) {
-        let data = std::fs::read_to_string(filename).expect("Unable to read file");
-        let transactions: Vec<Transaction> =
-            serde_json::from_str(&data).expect("Unable to parse JSON");
-
-        for transaction in transactions {
-            let sender_wallet_index = wallets.iter().position(|w| w.address == transaction.sender);
-            let receiver_wallet_index = wallets
-                .iter()
-                .position(|w| w.address == transaction.receiver);
-
-            if let (Some(sender_index), Some(receiver_index)) =
-                (sender_wallet_index, receiver_wallet_index)
-            {
-                let (sender_wallet, receiver_wallet) = if sender_index < receiver_index {
-                    let (left, right) = wallets.split_at_mut(receiver_index);
-                    (&mut left[sender_index], &mut right[0])
-                } else {
-                    let (left, right) = wallets.split_at_mut(sender_index);
-                    (&mut right[0], &mut left[receiver_index])
-                };
-
-                self.process_transaction(sender_wallet, receiver_wallet, transaction.amount);
-            }
-        }
+        self.add_block(transaction_data);
     }
 }

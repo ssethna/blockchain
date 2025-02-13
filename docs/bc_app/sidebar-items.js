@@ -1,1 +1,1 @@
-window.SIDEBAR_ITEMS = {"fn":["list_blockchain","main","reset_sample_data","send_crypto","view_wallet"]};
+window.SIDEBAR_ITEMS = {"fn":["list_blockchain","main","send_crypto","view_wallet"],"mod":["mongo_utils"]};

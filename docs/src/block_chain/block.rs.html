@@ -57,26 +57,56 @@
 <a href="#56" id="56">56</a>
 <a href="#57" id="57">57</a>
 <a href="#58" id="58">58</a>
-<a href="#59" id="59">59</a></pre></div><pre class="rust"><code><span class="doccomment">//!
+<a href="#59" id="59">59</a>
+<a href="#60" id="60">60</a>
+<a href="#61" id="61">61</a>
+<a href="#62" id="62">62</a>
+<a href="#63" id="63">63</a>
+<a href="#64" id="64">64</a>
+<a href="#65" id="65">65</a>
+<a href="#66" id="66">66</a>
+<a href="#67" id="67">67</a>
+<a href="#68" id="68">68</a>
+<a href="#69" id="69">69</a>
+<a href="#70" id="70">70</a>
+<a href="#71" id="71">71</a>
+<a href="#72" id="72">72</a>
+<a href="#73" id="73">73</a>
+<a href="#74" id="74">74</a></pre></div><pre class="rust"><code><span class="doccomment">//!
 //! This is the block module.&lt;br&gt;
 //! The bock struct is used to create a block.
 //!
 
 </span><span class="kw">use </span>serde::{Deserialize, Serialize};
+<span class="kw">use </span>serde_json::Value;
 <span class="kw">use </span>sha2::{Digest, Sha256};
+<span class="kw">use </span>std::cmp::PartialEq;
 <span class="kw">use </span>std::fmt::Write;
 
 <span class="doccomment">/// This is the block struct.&lt;br&gt;
 /// It includes index, timestamp, &lt;br&gt;
 /// hash previous hash and data field.
 ///
-</span><span class="attr">#[derive(Debug, Serialize, Deserialize)]
+</span><span class="attr">#[derive(Debug, Serialize, Deserialize, Clone)]
 </span><span class="kw">pub struct </span>Block {
-    <span class="kw">pub </span>index: u64,
+    <span class="kw">pub </span>block_index: u64,
     <span class="kw">pub </span>timestamp: u64,
     <span class="kw">pub </span>previous_hash: String,
     <span class="kw">pub </span>hash: String,
-    <span class="kw">pub </span>data: String,
+    <span class="kw">pub </span>data: Value,
+}
+
+<span class="doccomment">///
+/// Adding Trait PartialEq.
+///
+</span><span class="kw">impl </span>PartialEq <span class="kw">for </span>Block {
+    <span class="kw">fn </span>eq(<span class="kw-2">&amp;</span><span class="self">self</span>, other: <span class="kw-2">&amp;</span><span class="self">Self</span>) -&gt; bool {
+        <span class="self">self</span>.block_index == other.block_index
+            &amp;&amp; <span class="self">self</span>.timestamp == other.timestamp
+            &amp;&amp; <span class="self">self</span>.previous_hash == other.previous_hash
+            &amp;&amp; <span class="self">self</span>.hash == other.hash
+            &amp;&amp; <span class="self">self</span>.data == other.data
+    }
 }
 
 <span class="doccomment">///
@@ -86,9 +116,9 @@
     <span class="doccomment">///
     /// Function to create a new block struct.
     ///
-    </span><span class="kw">pub fn </span>new(index: u64, timestamp: u64, previous_hash: String, data: String) -&gt; Block {
+    </span><span class="kw">pub fn </span>new(block_index: u64, timestamp: u64, previous_hash: String, data: Value) -&gt; Block {
         <span class="kw">let </span><span class="kw-2">mut </span>block = Block {
-            index,
+            block_index,
             timestamp,
             previous_hash,
             hash: String::new(),
@@ -104,10 +134,10 @@
     ///
     </span><span class="kw">pub fn </span>calculate_hash(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; String {
         <span class="kw">let </span><span class="kw-2">mut </span>hasher = Sha256::new();
-        hasher.update(<span class="self">self</span>.index.to_string());
+        hasher.update(<span class="self">self</span>.block_index.to_string());
         hasher.update(<span class="self">self</span>.timestamp.to_string());
         hasher.update(<span class="kw-2">&amp;</span><span class="self">self</span>.previous_hash);
-        hasher.update(<span class="kw-2">&amp;</span><span class="self">self</span>.data);
+        hasher.update(<span class="kw-2">&amp;</span><span class="self">self</span>.data.to_string());
         <span class="kw">let </span>result = hasher.finalize();
         <span class="kw">let </span><span class="kw-2">mut </span>hash = String::new();
         <span class="kw">for </span>byte <span class="kw">in </span>result {
